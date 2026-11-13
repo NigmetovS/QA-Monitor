@@ -1,0 +1,17 @@
+
+{
+  "sites": [
+    {
+      "id": "example",
+      "name": "Example Website",
+      "url": "https://example.com",
+      "enabled": true
+    },
+    {
+      "id": "playwright",
+      "name": "Playwright Website",
+      "url": "https://playwright.dev",
+      "enabled": true
+    }
+  ]
+}

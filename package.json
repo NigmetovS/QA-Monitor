@@ -1,0 +1,17 @@
+{
+  "name": "qa-monitor-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "demo": "node demo/server.cjs",
+    "test": "playwright test",
+    "test:notify": "node src/notify.cjs",
+    "install:browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.0"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.10"
+  }
+}

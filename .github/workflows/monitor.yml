@@ -1,0 +1,41 @@
+name: QA Monitor
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * *'
+permissions:
+  contents: read
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install
+      - run: npx playwright install --with-deps chromium
+      - name: Run checks
+        id: checks
+        continue-on-error: true
+        run: npm test
+      - name: Notify Telegram
+        if: always()
+        continue-on-error: true
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: npm run test:notify
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-monitor-results
+          path: |
+            playwright-report/
+            test-results/
+            results.json
+          retention-days: 14
+      - name: Mark workflow failed if checks failed
+        if: steps.checks.outcome == 'failure'
+        run: exit 1

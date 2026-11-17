@@ -9,7 +9,9 @@
     "report": "playwright show-report",
     "tasks": "node scripts/tasks.mjs",
     "install:browsers": "playwright install chromium",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "audit": "node scripts/audit.mjs",
+    "audit:decrypt": "bash scripts/audit-decrypt.sh"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.0",

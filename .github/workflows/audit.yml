@@ -1,0 +1,73 @@
+name: Site Audit
+
+# Экспресс-аудит сайтов по запросу (Actions → Site Audit → Run workflow).
+# Репозиторий публичный, поэтому результаты шифруются открытым ключом из входа
+# public_key и сохраняются в ветку audit-data. Расшифровать может только
+# владелец закрытого ключа:  npm run audit:decrypt -- <файл> <private.pem>
+on:
+  workflow_dispatch:
+    inputs:
+      sites:
+        description: 'JSON: [{"url":"https://...","name":"...","query":"поисковый запрос"}]'
+        required: true
+      public_key:
+        description: "Открытый RSA-ключ (PEM) для шифрования результатов"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: site-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - run: npx playwright install --with-deps chromium
+
+      - name: Run audit
+        env:
+          SITES: ${{ inputs.sites }}
+        run: |
+          printf '%s' "$SITES" > "$RUNNER_TEMP/sites.json"
+          node scripts/audit.mjs --config "$RUNNER_TEMP/sites.json" 2>&1 | grep -v '^  статус' || true
+
+      - name: Encrypt results
+        env:
+          PUBLIC_KEY: ${{ inputs.public_key }}
+        run: |
+          printf '%s\n' "$PUBLIC_KEY" > "$RUNNER_TEMP/pub.pem"
+          tar -czf "$RUNNER_TEMP/audit.tgz" audit-results
+          openssl rand -hex 32 > "$RUNNER_TEMP/key.txt"
+          mkdir -p out
+          openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:"$RUNNER_TEMP/key.txt" -in "$RUNNER_TEMP/audit.tgz" -out "out/audit-${{ github.run_id }}.enc"
+          openssl pkeyutl -encrypt -pubin -inkey "$RUNNER_TEMP/pub.pem" -pkeyopt rsa_padding_mode:oaep -in "$RUNNER_TEMP/key.txt" -out "out/audit-${{ github.run_id }}.key"
+          rm -rf audit-results "$RUNNER_TEMP/audit.tgz" "$RUNNER_TEMP/key.txt"
+
+      - name: Save to audit-data branch
+        run: |
+          git config user.name "qa-monitor-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin audit-data || true
+          if git rev-parse --verify origin/audit-data >/dev/null 2>&1; then
+            git switch -c audit-data origin/audit-data
+          else
+            git switch --orphan audit-data
+          fi
+          mkdir -p runs && mv out/* runs/
+          git add runs
+          git commit -m "Encrypted audit ${{ github.run_id }}"
+          git push origin audit-data
+          echo "Результат: ветка audit-data, runs/audit-${{ github.run_id }}.enc" >> "$GITHUB_STEP_SUMMARY"

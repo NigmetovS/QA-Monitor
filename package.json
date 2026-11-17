@@ -11,7 +11,8 @@
     "install:browsers": "playwright install chromium",
     "typecheck": "tsc --noEmit",
     "audit": "node scripts/audit.mjs",
-    "audit:decrypt": "bash scripts/audit-decrypt.sh"
+    "audit:decrypt": "bash scripts/audit-decrypt.sh",
+    "audit:report": "node scripts/audit-report.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.0",

@@ -173,6 +173,7 @@ async function inspectPage(page) {
     if (/__NUXT__|\/_nuxt\//.test(html)) platform.push('Nuxt');
     if (/joomla/i.test(html)) platform.push('Joomla');
     if (/data-wf-site|webflow/i.test(html)) platform.push('Webflow');
+    if (/satu\.kz\/(?:site|create)|Создать сайт.*Satu|satu-pro/i.test(html)) platform.push('Satu.kz (конструктор)');
 
     const chat = Object.entries(CHAT_WIDGETS).filter(([, re]) => new RegExp(re).test(scripts)).map(([n]) => n);
 

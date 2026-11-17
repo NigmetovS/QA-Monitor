@@ -21,12 +21,22 @@ const esc = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').re
 const sec = ms => (ms / 1000).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + ' с';
 const short = u => { try { const x = new URL(u); return (x.hostname + x.pathname).replace(/\/$/, '').slice(0, 80); } catch { return String(u).slice(0, 80); } };
 
+/** Страница-заглушка защиты от ботов: данные недостоверны, нужна ручная проверка. */
+export function isBlocked(r) {
+  return /секундочку|just a moment|checking your browser|ddos-guard|attention required/i.test(r.seo?.title || '');
+}
+
+// Служебные сообщения браузера, не влияющие на работу сайта.
+const BENIGN_ERRORS = /OTP retrieval|Permissions policy violation|requestStorageAccess|ResizeObserver loop/i;
+
 /** Превращает сырые данные аудита в понятные владельцу бизнеса выводы. */
 export function findIssues(r) {
   const issues = [];
   const add = (severity, id, title, impact, details = []) => issues.push({ severity, id, title, impact, details });
   const d = r.desktop || {};
   const m = r.mobile || {};
+
+  if (isBlocked(r)) return issues;
 
   if (d.error || (d.status && d.status >= 400)) {
     add('critical', 'down', 'Главная страница не открылась',
@@ -69,12 +79,12 @@ export function findIssues(r) {
       d.heavyImages.slice(0, 5).map(i => `${short(i.url)} — ${i.kb} КБ`));
   }
 
-  const jsErrors = [...new Set([...(d.pageErrors || []), ...(m.pageErrors || [])])];
+  const jsErrors = [...new Set([...(d.pageErrors || []), ...(m.pageErrors || [])])].filter(e => !BENIGN_ERRORS.test(e));
   if (jsErrors.length) {
     add('important', 'js-errors', `Ошибки JavaScript: ${jsErrors.length}`,
       'Такие ошибки часто ломают кнопки, фильтры, корзину или оформление заказа.', jsErrors.slice(0, 5));
   }
-  const consoleErr = [...new Set(d.consoleErrors || [])].filter(e => !jsErrors.includes(e));
+  const consoleErr = [...new Set(d.consoleErrors || [])].filter(e => !jsErrors.includes(e) && !BENIGN_ERRORS.test(e));
   if (consoleErr.length >= 3) {
     add('advice', 'console-errors', `Ошибки в консоли браузера: ${consoleErr.length}`,
       'Признак технических неполадок: что-то на странице не загрузилось или не сработало.', consoleErr.slice(0, 5));
@@ -85,6 +95,14 @@ export function findIssues(r) {
     add('important', 'failed-requests', `Не загружаются файлы сайта: ${failedOwn.length}`,
       'Отсутствующие картинки, стили или скрипты — страница может выглядеть сломанной.',
       failedOwn.slice(0, 6).map(f => `${short(f.url)} — ${f.status}`));
+  }
+
+  const failedImages = (d.failedRequests || []).filter(f => !f.firstParty && /ORB|ERR_|^4\d\d/.test(String(f.status)));
+  const imageHosts = [...new Set(failedImages.map(f => { try { return new URL(f.url).hostname; } catch { return f.url; } }))];
+  if (failedImages.length >= 2) {
+    add('important', 'external-images', `Не загружаются файлы со сторонних сайтов: ${failedImages.length}`,
+      'Часть картинок или файлов подгружается с чужих хостингов и не отображается у покупателей — на их месте пустые блоки.',
+      imageHosts.slice(0, 5));
   }
 
   const broken = r.links?.broken || [];
@@ -108,9 +126,10 @@ export function findIssues(r) {
   }
 
   if (r.search) {
+    // Ошибка автоматического ввода (например, поле перекрыто всплывающим окном) —
+    // не доказательство поломки, такие случаи проверяются вручную.
     if (r.search.error) {
-      add('critical', 'search-broken', `Поиск по сайту не сработал (запрос «${r.search.query}»)`,
-        'Поиск — один из главных путей к покупке. Если он не работает, покупатель уходит к конкуренту.', [r.search.error]);
+      // без вывода
     } else if (r.search.found && r.search.noResults) {
       add('important', 'search-empty', `Поиск не нашёл товары по запросу «${r.search.query}»`,
         'Покупатель ищет популярный товар и видит «ничего не найдено» — хотя товар может быть в каталоге.');
@@ -158,6 +177,42 @@ export function findIssues(r) {
   return issues.sort((a, b) => SEVERITY[a.severity].order - SEVERITY[b.severity].order);
 }
 
+const NICHE_CASES = {
+  'цветы': [
+    ['Выбор даты и времени доставки', 'В оформлении заказа можно выбрать дату и интервал; прошедшие даты недоступны.'],
+    ['Пиковые дни (14 февраля, 8 марта)', 'Каталог и оформление работают; проверка учащается в праздничные дни.']
+  ],
+  'зоотовары': [
+    ['Фильтры каталога (бренд, вес, возраст)', 'Фильтр сужает список, товары соответствуют выбранным параметрам.'],
+    ['Наличие популярного корма', 'Карточка ходового товара показывает цену и наличие.']
+  ],
+  'косметика': [
+    ['Фильтр по бренду', 'Список товаров обновляется, бренд в карточках совпадает.'],
+    ['Акции и промокоды', 'Промокод применяется в корзине, сумма пересчитывается.']
+  ]
+};
+
+/** Тест-кейсы мониторинга под функции, найденные на сайте. Все — без реальных заказов и оплат. */
+export function testCases(r) {
+  const f = r.features || {};
+  const cases = [['Главная страница доступна', 'Открывается за разумное время, без ошибок, SSL действителен.']];
+  if (f.search) cases.push([`Поиск по запросу «${r.search?.query || 'популярный товар'}»`, 'Находятся товары с ценами, страница результатов без ошибок.']);
+  if (f.catalogLinks > 0) cases.push(['Переход в категорию каталога', 'Открывается список товаров с ценами и фото.']);
+  if (f.cart) {
+    cases.push(['Карточка товара', 'Есть цена, фото, наличие и кнопка «В корзину».']);
+    cases.push(['Добавление в корзину', 'Счётчик и сумма корзины обновляются.']);
+    cases.push(['Оформление заказа (без отправки)', 'Форма открывается, обязательные поля проверяются, способы доставки доступны.']);
+  }
+  if (f.kaspi) cases.push(['Оплата через Kaspi', 'Способ оплаты Kaspi отображается на шаге оплаты.']);
+  if (f.whatsapp) cases.push(['Кнопка WhatsApp', 'Ссылка ведёт на действующий номер магазина.']);
+  if ((f.phone || []).length) cases.push(['Телефон на сайте', 'Номер кликабелен и в правильном формате.']);
+  if ((f.chat || []).length) cases.push([`Онлайн-чат (${f.chat.join(', ')})`, 'Виджет загружается и открывается.']);
+  if (f.login) cases.push(['Вход в личный кабинет', 'Страница входа открывается, форма работает (тестовый аккаунт).']);
+  cases.push(['Мобильная версия', 'Меню, поиск и корзина доступны на телефоне, вёрстка не «едет».']);
+  cases.push(...(NICHE_CASES[r.niche] || []));
+  return cases.map(([title, expected], i) => ({ id: `TC-${String(i + 1).padStart(2, '0')}`, title, expected }));
+}
+
 export function score(issues) {
   return Math.max(0, 100 - issues.reduce((s, i) => s + SEVERITY[i.severity].weight, 0));
 }
@@ -169,6 +224,11 @@ function img(dir, file) {
 }
 
 function report(r, dir) {
+  if (isBlocked(r)) {
+    return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Экспресс-аудит — ${esc(r.name)}</title>
+<style>body{font:16px/1.55 system-ui,sans-serif;max-width:720px;margin:48px auto;padding:0 16px;color:#1b2230;background:#f6f7f9}</style></head>
+<body><h1>${esc(r.name)}</h1><p>Сайт закрыт защитой от автоматических посетителей (страница «${esc(r.seo?.title)}»), поэтому экспресс-аудит не выполнен. Нужна ручная проверка или проверка с разрешения владельца.</p></body></html>`;
+  }
   const issues = findIssues(r);
   const total = score(issues);
   const grade = total >= 85 ? 'good' : total >= 60 ? 'mid' : 'bad';
@@ -227,6 +287,8 @@ table{width:100%;border-collapse:collapse}td{padding:7px 0;border-bottom:1px sol
 .shots{display:grid;grid-template-columns:2fr 1fr;gap:12px;align-items:start}.shots figure{margin:0}.shots img{width:100%;border:1px solid var(--line);border-radius:10px;display:block}
 .shots .search{grid-column:1/-1}figcaption{color:var(--muted);font-size:13px;margin-top:4px}
 .offer{background:var(--accent);color:#fff;border:0}.offer h2{color:#fff}.offer ul{margin:8px 0 0;padding-left:18px}.offer p{margin:8px 0 0}
+.note{color:var(--muted);font-size:13px;margin:-6px 0 16px}
+.cases td{text-align:left;vertical-align:top;padding:8px 8px 8px 0}.cases td:first-child{white-space:nowrap;width:64px}
 .foot{color:var(--muted);font-size:13px;text-align:center;margin-top:20px}
 @media (max-width:600px){.shots{grid-template-columns:1fr}.head h1{font-size:22px}}
 </style></head><body><main>
@@ -244,6 +306,8 @@ table{width:100%;border-collapse:collapse}td{padding:7px 0;border-bottom:1px sol
   <div class="metric"><span>Битых ссылок</span><b>${r.links ? `${r.links.broken.length} / ${r.links.checked}` : '—'}</b></div>
 </div></section>
 
+<p class="note">Скорость измерена одним визитом с сервера за пределами Казахстана; у покупателей в Казахстане она может быть выше. Вес страницы от расположения не зависит.</p>
+
 <section class="card"><h2>Что мы нашли</h2><ul class="issues">${issueHtml}</ul></section>
 
 <section class="card"><h2>Как сайт видят покупатели</h2><div class="shots">${shots}</div></section>
@@ -251,11 +315,15 @@ table{width:100%;border-collapse:collapse}td{padding:7px 0;border-bottom:1px sol
 <section class="card"><h2>Функции главной страницы</h2><table>${featureRows}</table>
 ${(r.platform || []).length ? `<p class="no" style="margin:10px 0 0">Платформа: ${esc(r.platform.join(', '))}</p>` : ''}</section>
 
+<section class="card"><h2>Сценарии мониторинга для вашего сайта</h2>
+<p class="no" style="margin:0 0 10px">Что мы будем проверять реальным браузером по расписанию. Без реальных заказов и оплат — только с вашего разрешения.</p>
+<table class="cases">${testCases(r).map(c => `<tr><td><b>${c.id}</b></td><td><b>${esc(c.title)}</b><br><span class="no">${esc(c.expected)}</span></td></tr>`).join('')}</table></section>
+
 <section class="card offer"><h2>Что дальше</h2>
 <p>Это разовая проверка одной страницы. Проблемы на сайте появляются после каждого обновления, смены хостинга или плагина — и обычно их первыми замечают покупатели.</p>
 <ul>
   <li>Проверяем ключевые сценарии покупки (поиск → товар → корзина → оформление) реальным браузером каждые несколько часов</li>
-  <li>Сообщаем в Telegram в течение минут после поломки — со скриншотом и видео</li>
+  <li>Сообщаем в Telegram сразу, как обнаружим поломку — со скриншотом и видео</li>
   <li>Следим за скоростью, SSL и доступностью; еженедельный отчёт и статус-страница</li>
 </ul>
 ${contact ? `<p><b>${esc(contact)}</b></p>` : ''}
@@ -277,7 +345,9 @@ for (const name of dirs) {
   const r = JSON.parse(fs.readFileSync(path.join(dir, 'result.json'), 'utf8'));
   const issues = findIssues(r);
   fs.writeFileSync(path.join(dir, 'report.html'), report(r, dir));
-  summary.push({ site: name, name: r.name, niche: r.niche, score: score(issues), issues: issues.map(i => ({ severity: i.severity, id: i.id, title: i.title })) });
-  console.log(`${String(score(issues)).padStart(3)}  ${name}  (${issues.length} замечаний) → ${path.relative(process.cwd(), path.join(dir, 'report.html'))}`);
+  summary.push({ site: name, name: r.name, niche: r.niche, blocked: isBlocked(r), score: isBlocked(r) ? null : score(issues),
+    testCases: isBlocked(r) ? [] : testCases(r),
+    metrics: { mobileLoadMs: r.mobile?.timing?.loadMs ?? null, desktopLoadMs: r.desktop?.timing?.loadMs ?? null, weightKB: r.desktop?.transferKB ?? null, sslDays: r.ssl?.daysLeft ?? null }, issues: issues.map(i => ({ severity: i.severity, id: i.id, title: i.title })) });
+  console.log(`${isBlocked(r) ? '  —' : String(score(issues)).padStart(3)}  ${name}  (${issues.length} замечаний) → ${path.relative(process.cwd(), path.join(dir, 'report.html'))}`);
 }
 fs.writeFileSync(path.join(ROOT, 'findings.json'), JSON.stringify(summary, null, 2));

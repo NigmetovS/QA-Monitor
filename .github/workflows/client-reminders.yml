@@ -1,0 +1,31 @@
+name: Client Reminders
+
+# Напоминания по задачам с клиентами в Telegram.
+# Будни, 08:47 по Казахстану (02:47 UTC). Задачи хранятся в Supabase → client_tasks.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "47 2 * * 1-5"
+
+permissions:
+  contents: read
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      REPORT_TZ: Asia/Almaty
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --omit=dev
+      - name: Send reminder
+        run: npm run tasks -- remind

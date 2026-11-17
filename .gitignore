@@ -5,3 +5,7 @@ status-page/
 results.json
 .env
 .monitor-state/
+audit-results/
+audit-results-decrypted/
+prospects/
+*.pem

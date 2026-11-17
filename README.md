@@ -102,6 +102,40 @@ npm run tasks -- move 12 2026-11-30                        # перенести 
 npm run tasks -- remind                                    # прислать напоминание сейчас
 ```
 
+## Экспресс-аудит для привлечения клиентов
+
+Пассивная проверка главной страницы одним визитом: скорость (ПК и телефон), вес страницы, ошибки, битые ссылки, SSL, мобильная вёрстка, SEO, поиск и ключевые функции. Без нагрузки и попыток взлома.
+
+```powershell
+npm run audit -- https://shop.kz https://other.kz
+npm run audit:report -- audit-results --contact "Имя · +7 ... · @telegram"
+```
+
+В каждой папке `audit-results/<домен>/` появится `report.html` — отчёт для владельца сайта со скриншотами, найденными проблемами и списком сценариев мониторинга. Оценки — это ориентир, а не приговор: перед отправкой просмотрите отчёт глазами.
+
+Запуск из GitHub (Actions → **Site Audit**): результаты шифруются вашим открытым ключом и сохраняются в ветку `audit-data`.
+
+```bash
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out audit_private.pem
+```
+
+```bash
+openssl pkey -in audit_private.pem -pubout
+```
+
+Вывод второй команды вставьте в поле `public_key`. Расшифровка: `npm run audit:decrypt -- runs/audit-<id>.enc audit_private.pem`.
+
+## Сценарии интернет-магазина без кода
+
+`tests/ecommerce.spec.ts` — главная с ценами, поиск, добавление в корзину, ссылка WhatsApp. Включаются секретом `ECOMMERCE_JSON`:
+
+```json
+{ "shops": [{ "id": "client", "name": "Магазин", "url": "https://shop.kz",
+  "searchQuery": "корм для кошек", "whatsapp": true, "allowCart": false }] }
+```
+
+Корзина проверяется только при `allowCart: true` и заданных `selectors.product` / `selectors.addToCart`.
+
 ## Подключение клиента (только с разрешения)
 
 1. Получите **письменное разрешение** и согласуйте тестовое (staging) окружение.

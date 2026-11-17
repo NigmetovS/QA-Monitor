@@ -1,7 +1,19 @@
 -- QA Monitor: схема Supabase.
 -- Выполните целиком в Supabase → SQL Editor. Скрипт можно запускать повторно.
 
--- 1. История проверок ---------------------------------------------------------
+-- 1. Сайты (checks.site_id ссылается на sites.id; заполняется автоматически) ---
+create table if not exists public.sites (
+  id         text primary key,
+  name       text,
+  url        text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.sites
+  add column if not exists name text,
+  add column if not exists url  text;
+
+-- 2. История проверок ---------------------------------------------------------
 create table if not exists public.checks (
   id            bigint generated always as identity primary key,
   created_at    timestamptz not null default now(),
@@ -23,7 +35,7 @@ alter table public.checks
 
 create index if not exists checks_site_created_idx on public.checks (site_id, created_at desc);
 
--- 2. Задачи по клиентам (напоминания в Telegram) -------------------------------
+-- 3. Задачи по клиентам (напоминания в Telegram) -------------------------------
 -- Храним здесь, а не в репозитории: репозиторий публичный.
 create table if not exists public.client_tasks (
   id         bigint generated always as identity primary key,
@@ -38,12 +50,13 @@ create table if not exists public.client_tasks (
 
 create index if not exists client_tasks_open_idx on public.client_tasks (done, due_date);
 
--- 3. Доступ только через service_role (GitHub Actions / локальные скрипты).
+-- 4. Доступ только через service_role (GitHub Actions / локальные скрипты).
 -- RLS без политик = публичный anon-ключ ничего не прочитает.
+alter table public.sites enable row level security;
 alter table public.checks enable row level security;
 alter table public.client_tasks enable row level security;
 
--- 4. Стартовый план (добавляется, только если задач ещё нет).
+-- 5. Стартовый план (добавляется, только если задач ещё нет).
 insert into public.client_tasks (client, title, due_date)
 select * from (values
   ('Платформа', 'Выполнить schema.sql и проверить секреты GitHub (Telegram, Supabase, Heartbeat)', current_date + 1),

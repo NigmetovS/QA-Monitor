@@ -49,19 +49,34 @@ class SupabaseReporter implements Reporter {
       run_id: process.env.GITHUB_RUN_ID ?? null
     }));
 
-    let { error } = await supabase.from('checks').insert(extended);
+    // checks.site_id ссылается на sites.id — сначала регистрируем сайты.
+    const sites = [...new Map(this.records.map(r => [r.siteId, { id: r.siteId, name: r.siteName, url: r.url }])).values()];
+    const { error: sitesError } = await supabase.from('sites').upsert(sites, { onConflict: 'id' });
+    if (sitesError) console.warn('Supabase: не удалось обновить таблицу sites:', sitesError.message);
 
-    // Таблица ещё в старом формате — сохраняем то, что можем, и подсказываем миграцию.
-    if (error && (error.code === 'PGRST204' || /column/i.test(error.message))) {
-      console.warn('Supabase: нет новых колонок. Выполните supabase/schema.sql в SQL Editor.');
-      ({ error } = await supabase.from('checks').insert(base));
+    // Пишем по сайтам, чтобы ошибка одного не теряла данные остальных.
+    let saved = 0;
+    let legacy = false;
+    for (const site of sites) {
+      const pick = <T extends { site_id: string }>(rows: T[]) => rows.filter(row => row.site_id === site.id);
+      let { error } = await supabase.from('checks').insert(pick(legacy ? base : extended));
+
+      // Таблица ещё в старом формате — сохраняем то, что можем, и подсказываем миграцию.
+      if (error && !legacy && (error.code === 'PGRST204' || /column/i.test(error.message))) {
+        console.warn('Supabase: нет новых колонок. Выполните supabase/schema.sql в SQL Editor.');
+        legacy = true;
+        ({ error } = await supabase.from('checks').insert(pick(base)));
+      }
+
+      if (error) {
+        console.error(`Supabase: сайт ${site.id} не сохранён:`, error.message);
+        continue;
+      }
+      saved += pick(base).length;
     }
 
-    if (error) {
-      console.error('Supabase insert error:', error.message);
-      return;
-    }
-    console.log(`Supabase: сохранено проверок — ${this.records.length}`);
+    if (saved === 0) return;
+    console.log(`Supabase: сохранено проверок — ${saved} из ${this.records.length}`);
   }
 }
 

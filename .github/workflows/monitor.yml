@@ -22,6 +22,7 @@ jobs:
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      HEARTBEAT_URL: ${{ secrets.HEARTBEAT_URL }}
 
     steps:
       - name: Checkout repository
@@ -58,6 +59,12 @@ jobs:
         with:
           path: .monitor-state/
           key: monitor-state-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # Сообщает внешнему сервису, что проверки реально запускались.
+      # Если сигналов нет дольше положенного, сервис пишет вам сам.
+      - name: Heartbeat
+        if: ${{ always() && env.HEARTBEAT_URL != '' && steps.checks.outcome != 'skipped' }}
+        run: curl -fsS -m 10 --retry 3 "$HEARTBEAT_URL" > /dev/null || echo "Heartbeat ping failed"
 
       - name: Upload reports
         if: always()

@@ -1,15 +1,20 @@
 {
   "name": "qa-monitor-mvp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "scripts": {
-    "demo": "node demo/server.cjs",
     "test": "playwright test",
-    "test:notify": "node src/notify.cjs",
-    "install:browsers": "playwright install chromium"
+    "demo": "node demo/server.cjs",
+    "demo:broken": "node scripts/demo-broken.mjs",
+    "report": "playwright show-report",
+    "tasks": "node scripts/tasks.mjs",
+    "install:browsers": "playwright install chromium",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.0"
+    "@playwright/test": "^1.58.0",
+    "typescript": "^5.9.3",
+    "@types/node": "^22.19.0"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",

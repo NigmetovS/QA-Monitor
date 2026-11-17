@@ -1,59 +1,132 @@
-# QA Monitor MVP
+# QA Monitor
 
-An initial sellable demo of automated browser monitoring using Playwright. The default target is a **local demo shop**; do not point tests at third-party sites without permission.
+Автоматический мониторинг сайтов и ключевых бизнес-сценариев в реальном браузере (Playwright) с алертами в Telegram, статус-страницей для клиента и историей в Supabase.
 
-## Requirements
-- Node.js 20+ (recommended 22)
-- npm
+## Что умеет
 
-## Run on Windows PowerShell
+| Проверка | Что значит для клиента |
+|---|---|
+| **Доступность** — HTTP-код, непустая страница | Сайт открывается у покупателей |
+| **Время ответа** — замер при каждой проверке, порог «медленно» | Сайт не тормозит |
+| **Контент** — нужный текст есть на странице (`expectText`) | Не «белый экран», не страница ошибки |
+| **SSL-сертификат** — валиден, предупреждение за 14 дней | Браузер не покажет «небезопасно» |
+| **Бизнес-сценарии** — корзина, форма, оформление заказа | Клиенты реально могут купить |
+
+У каждого сайта три состояния: ✅ работает, ⚠️ есть замечания (медленно или SSL скоро истечёт), 🚨 не работает.
+
+**Уведомления в Telegram:**
+- приходят только при **смене** статуса (упал, восстановился, появились замечания), поэтому спама каждые 30 минут нет;
+- в каждом сообщении есть причина, HTTP-код, время ответа и ссылка на отчёт со скриншотом и видео;
+- раз в сутки (около 08:00 по Казахстану) приходит **сводка**: аптайм, среднее время ответа, число инцидентов.
+
+**Статус-страница** (`status-page/index.html`) — аккуратная страница, которую можно показать клиенту. На ней общий статус, история последних проверок, аптайм за 24 часа, 7 и 30 дней, время ответа, SSL и описание проблем. Есть светлая и тёмная тема, страница нормально выглядит на телефоне.
+
+**Задачи по клиентам** — список дел в Supabase и напоминание в Telegram по будням утром: что просрочено, что на сегодня и что на неделе.
+
+## Быстрый старт (Windows PowerShell)
+
 ```powershell
 npm install
 npx playwright install chromium
 npm test
 ```
 
-Playwright automatically starts the local demo server. Open the HTML report:
-```powershell
-npx playwright show-report
+После запуска:
+- `status-page/index.html` — статус-страница (откройте двойным кликом);
+- `npm run report` — подробный отчёт Playwright со скриншотами и видео.
+
+## Как демонстрировать клиенту
+
+1. `npm test` — всё зелёное, откройте `status-page/index.html`.
+2. `npm run demo:broken` — демо-магазин «ломается» (оформление заказа перестаёт работать). Приходит 🚨 в Telegram, на статус-странице видно красный статус и причину, в `npm run report` видны скриншот и видео момента падения.
+3. `npm test` ещё раз — приходит ✅ «Сайт снова работает».
+
+Чтобы сломать корзину вместо оформления заказа: `npm run demo:broken -- cart`. Перед демонстрацией остановите `npm run demo`, если он запущен.
+
+## Настройка сайтов
+
+`sites.json`:
+
+```json
+{
+  "sites": [
+    {
+      "id": "client-shop",
+      "name": "Интернет-магазин клиента",
+      "url": "https://shop.example.kz",
+      "expectText": "Каталог",
+      "slowMs": 3000,
+      "enabled": true
+    }
+  ]
+}
 ```
 
-To run the demo site yourself:
+- `id` — латиницей, уникальный, не меняйте после запуска (по нему хранится история);
+- `expectText` — необязательно: текст, который обязан быть на странице;
+- `slowMs` — необязательно: порог «медленно», по умолчанию 3000 мс.
+
+> ⚠️ **Репозиторий публичный.** Адреса клиентов не кладите в `sites.json`. Положите тот же JSON в секрет GitHub **`SITES_JSON`**: он перекрывает файл.
+
+## Настройка GitHub Actions
+
+**Settings → Secrets and variables → Actions → New repository secret:**
+
+| Секрет | Зачем |
+|---|---|
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Алерты, сводка, напоминания |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | История проверок и задачи по клиентам |
+| `HEARTBEAT_URL` | Пинг во внешний сервис (например, healthchecks.io): если мониторинг перестал запускаться, он напишет вам |
+| `SITES_JSON` | Список сайтов клиентов (необязательно) |
+
+Workflow:
+- **QA Monitor** — каждые 30 минут. В артефактах лежат `status-page` и `qa-monitor-results` (отчёт, скриншоты, видео), хранятся 14 дней;
+- **Client Reminders** — по будням в 08:47 (Казахстан). Шлёт напоминание, если есть просроченные задачи или задачи на сегодня; по понедельникам — обзор недели.
+
+Расписание GitHub работает «по мере возможности»: запуск может задержаться на 5–15 минут. Для строгих SLA нужен отдельный сервер.
+
+## Supabase
+
+1. Supabase → **SQL Editor** → вставьте `supabase/schema.sql` → **Run**. Скрипт безопасно запускать повторно: он добавит новые колонки в `checks`, создаст `client_tasks` и стартовый план задач.
+2. Для обеих таблиц включён RLS без политик. Данные читаются только ключом `service_role`, публичный anon-ключ ничего не увидит.
+
+## Задачи по клиентам
+
+Добавлять задачи и отмечать их выполненными можно в Supabase → Table Editor → `client_tasks` или из консоли (нужен `.env` с ключами Supabase, см. `.env.example`):
+
 ```powershell
-npm run demo
-```
-Then visit http://127.0.0.1:4173.
-
-## Notifications
-Create a Telegram bot using @BotFather, get the chat ID for a chat that has started the bot, and set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` as environment variables (or GitHub Actions secrets). Do not commit credentials.
-
-PowerShell example (values are placeholders):
-```powershell
-$env:TELEGRAM_BOT_TOKEN="YOUR_TOKEN"
-$env:TELEGRAM_CHAT_ID="YOUR_CHAT_ID"
-npm test
-npm run test:notify
+npm run tasks                                              # список открытых задач
+npm run tasks -- add "ТОО Клиент" "Отправить отчёт за неделю" 2026-11-25
+npm run tasks -- done 12                                   # выполнено
+npm run tasks -- move 12 2026-11-30                        # перенести срок
+npm run tasks -- remind                                    # прислать напоминание сейчас
 ```
 
-If credentials are absent, notification prints to console only.
+## Подключение клиента (только с разрешения)
 
-## GitHub Actions
-Push this directory as a repository. Open Actions > QA Monitor > Run workflow. The schedule is 04:00 UTC daily (09:00 in Kazakhstan, UTC+5), but GitHub schedules are best-effort and can be delayed. Add Telegram credentials under Settings > Secrets and variables > Actions. Reports are stored as workflow artifacts for 14 days.
+1. Получите **письменное разрешение** и согласуйте тестовое (staging) окружение.
+2. Опишите 3–5 критичных сценариев, тестовые аккаунты и безопасные тестовые данные.
+3. Добавьте главную страницу и ключевые страницы в `SITES_JSON` (с `expectText`).
+4. Сценарии напишите в новом файле `tests/<клиент>.spec.ts` по образцу `tests/critical-flows.spec.ts`. Обязательно укажите `[id]` в названии `describe`: по нему результаты попадают в алерты и на статус-страницу.
+5. Сценарии не должны ничего ломать: никаких реальных покупок и оплат.
+6. Секреты клиента — только в секретах GitHub, не в коде.
+7. В договоре зафиксируйте частоту проверок, время реакции и срок хранения данных.
 
-## Client onboarding (authorized staging environments only)
-1. Obtain written permission and an agreed test environment.
-2. Document 3–5 critical business scenarios, test accounts and safe test data.
-3. Replace demo tests in `tests/critical-flows.spec.ts` with client-specific selectors and assertions.
-4. Prefer non-destructive scenarios; do not submit real purchases or payments.
-5. Keep client secrets in environment variables or repository secrets, never in code.
-6. Define check frequency, response time, and data retention in the service agreement.
+## Ограничения
 
-## MVP limitations
-- No multi-tenant dashboard or customer authentication.
-- No SLA or guaranteed detection of every defect.
-- GitHub Actions scheduling is not suitable for strict minute-by-minute uptime guarantees.
-- Each client's private checks should be isolated and credential access restricted.
-- Avoid storing personal data in screenshots, traces and artifacts.
+- Пока нет многопользовательского кабинета: статус-страница отдаётся как файл или артефакт.
+- В публичном репозитории артефакты (скриншоты, отчёты) видят авторизованные пользователи GitHub. Для реальных клиентов сделайте репозиторий приватным. Учтите: проверка каждые 30 минут — это примерно 3 000 минут Actions в месяц, а бесплатно для приватных репозиториев дают 2 000. Можно реже, например раз в час, или взять платный план.
+- Не храните персональные данные на скриншотах и в трейсах.
 
-## Commercial next steps
-Sell a fixed-scope paid audit before building a full SaaS. Track hours per setup, false alerts, monthly service costs, and recurring revenue.
+## Структура
+
+```
+tests/                  проверки (сайты из sites.json + сценарии демо-магазина)
+reporters/              monitor-reporter: статусы, Telegram, статус-страница
+                        supabase-reporter: история проверок
+src/                    общие модули: сайты, история, Telegram, HTML статус-страницы
+scripts/tasks.mjs       задачи по клиентам и напоминания
+scripts/demo-broken.mjs демонстрация падения
+supabase/schema.sql     схема базы
+demo/server.cjs         демо-магазин (DEMO_FAULT=checkout|cart ломает его)
+```

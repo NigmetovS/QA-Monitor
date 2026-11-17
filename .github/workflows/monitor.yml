@@ -23,6 +23,9 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       HEARTBEAT_URL: ${{ secrets.HEARTBEAT_URL }}
+      # Список сайтов клиентов; если секрет пуст — используется sites.json
+      SITES_JSON: ${{ secrets.SITES_JSON }}
+      REPORT_TZ: Asia/Almaty
 
     steps:
       - name: Checkout repository
@@ -76,6 +79,22 @@ jobs:
             test-results/
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Upload status page
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: status-page
+          path: status-page/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Run summary
+        if: always()
+        run: |
+          if [ -f status-page/index.html ]; then
+            echo "Статус-страница: скачайте артефакт **status-page** внизу этой страницы." >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Mark failed checks
         if: steps.checks.outcome == 'failure'

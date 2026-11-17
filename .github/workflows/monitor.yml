@@ -3,7 +3,8 @@ name: QA Monitor
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/30 * * * *"
+    # Раз в 3 часа, в :17 — в начале часа GitHub чаще задерживает запуски.
+    - cron: "17 */3 * * *"
 
 permissions:
   contents: read

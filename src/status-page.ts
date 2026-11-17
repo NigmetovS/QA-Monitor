@@ -2,7 +2,7 @@ import type { SiteSnapshot, SiteStatus } from '../reporters/collector';
 import { siteStats, type HistoryEntry } from './history';
 
 const TZ = process.env.REPORT_TZ || 'Asia/Almaty';
-const BARS = 48; // последние 48 проверок ≈ сутки при запуске раз в 30 минут
+const BARS = 48; // последние 48 проверок
 
 const LABEL: Record<SiteStatus, string> = { up: 'Работает', degraded: 'Есть замечания', down: 'Не работает' };
 
@@ -34,7 +34,8 @@ function timeline(history: HistoryEntry[], siteId: string): string {
     const p = e.sites[siteId];
     return `<i class="bar ${p.s}" title="${esc(fmtTime(e.at))} — ${LABEL[p.s]}${p.ms ? ', ' + p.ms + ' мс' : ''}"></i>`;
   }).join('');
-  return `<div class="timeline" role="img" aria-label="История последних проверок">${empty}${bars}</div>`;
+  return `<div class="timeline" role="img" aria-label="История последних проверок">${empty}${bars}</div>
+    <div class="axis"><span>${points.length ? esc(fmtTime(points[0].at)) : ''}</span><span>сейчас</span></div>`;
 }
 
 function siteCard(site: SiteSnapshot, history: HistoryEntry[], now: Date): string {
@@ -65,7 +66,6 @@ function siteCard(site: SiteSnapshot, history: HistoryEntry[], now: Date): strin
       <span class="pill ${site.status}">${LABEL[site.status]}</span>
     </header>
     ${timeline(history, site.id)}
-    <div class="axis"><span>сутки назад</span><span>сейчас</span></div>
     <div class="metrics">
       <div class="metric"><span>Аптайм 24 ч</span><b>${pct(day.uptime)}</b></div>
       <div class="metric"><span>7 дней</span><b>${pct(week.uptime)}</b></div>

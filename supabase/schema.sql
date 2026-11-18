@@ -17,7 +17,7 @@ alter table public.sites
 -- 2. История проверок ---------------------------------------------------------
 create table if not exists public.checks (
   id            bigint generated always as identity primary key,
-  created_at    timestamptz not null default now(),
+  checked_at    timestamptz not null default now(),
   site_id       text not null,
   test_name     text not null,
   status        text not null,
@@ -25,10 +25,8 @@ create table if not exists public.checks (
   error_message text
 );
 
--- Если таблица создавалась раньше без created_at, колонка добавится
--- (у старых записей будет время запуска этого скрипта).
 alter table public.checks
-  add column if not exists created_at    timestamptz not null default now(),
+  add column if not exists checked_at    timestamptz not null default now(),
   add column if not exists site_name     text,
   add column if not exists url           text,
   add column if not exists http_status   integer,
@@ -37,7 +35,7 @@ alter table public.checks
   add column if not exists warnings      text,
   add column if not exists run_id        text;
 
-create index if not exists checks_site_created_idx on public.checks (site_id, created_at desc);
+create index if not exists checks_site_checked_idx on public.checks (site_id, checked_at desc);
 
 -- 3. Задачи по клиентам (напоминания в Telegram) -------------------------------
 -- Храним здесь, а не в репозитории: репозиторий публичный.

@@ -10,8 +10,9 @@ create table if not exists public.sites (
 );
 
 alter table public.sites
-  add column if not exists name text,
-  add column if not exists url  text;
+  add column if not exists name       text,
+  add column if not exists url        text,
+  add column if not exists created_at timestamptz not null default now();
 
 -- 2. История проверок ---------------------------------------------------------
 create table if not exists public.checks (
@@ -24,7 +25,10 @@ create table if not exists public.checks (
   error_message text
 );
 
+-- Если таблица создавалась раньше без created_at, колонка добавится
+-- (у старых записей будет время запуска этого скрипта).
 alter table public.checks
+  add column if not exists created_at    timestamptz not null default now(),
   add column if not exists site_name     text,
   add column if not exists url           text,
   add column if not exists http_status   integer,
@@ -47,6 +51,14 @@ create table if not exists public.client_tasks (
   done_at    timestamptz,
   notes      text
 );
+
+alter table public.client_tasks
+  add column if not exists created_at timestamptz not null default now(),
+  add column if not exists client     text not null default 'Общее',
+  add column if not exists due_date   date,
+  add column if not exists done       boolean not null default false,
+  add column if not exists done_at    timestamptz,
+  add column if not exists notes      text;
 
 create index if not exists client_tasks_open_idx on public.client_tasks (done, due_date);
 

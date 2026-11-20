@@ -97,7 +97,9 @@ export function findIssues(r) {
       failedOwn.slice(0, 6).map(f => `${short(f.url)} — ${f.status}`));
   }
 
-  const failedImages = (d.failedRequests || []).filter(f => !f.firstParty && /ORB|ERR_|^4\d\d/.test(String(f.status)));
+  // Счётчики и реклама часто блокируются браузером — это не проблема сайта.
+  const TRACKERS = /google|gstatic|doubleclick|mail\.ru|yandex|facebook|fbcdn|vk\.com|tiktok|analytics|metrika|hotjar|clarity|criteo|adsrvr/i;
+  const failedImages = (d.failedRequests || []).filter(f => !f.firstParty && !TRACKERS.test(f.url) && /ORB|ERR_|^4\d\d/.test(String(f.status)));
   const imageHosts = [...new Set(failedImages.map(f => { try { return new URL(f.url).hostname; } catch { return f.url; } }))];
   if (failedImages.length >= 2) {
     add('important', 'external-images', `Не загружаются файлы со сторонних сайтов: ${failedImages.length}`,
